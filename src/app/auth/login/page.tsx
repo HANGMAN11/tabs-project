@@ -11,19 +11,29 @@ export default function LoginPage(){
     const [password, setPassword] = useState("");
     const [error, setError] = useState("")
 
-    const handleLogin = async(e:React.FormEvent) =>{
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if(!email || !password){
-            setError("Please, enter email and password");
-            return;
+      
+        if (!email || !password) {
+          setError("Please, enter email and password");
+          return;
         }
-        try{
-            await signInWithEmailAndPassword(auth, email, password);
-            router.push("/");
-        }catch(error:any){
-            alert(error.message);
+      
+        try {
+          await signInWithEmailAndPassword(auth, email, password);
+          router.push("/");
+        } catch (error: any) {
+          if (error.code === "auth/user-not-found") {
+            setError("This user does not exist. Please check your credentials.");
+          } else if (error.code === "auth/wrong-password") {
+            setError("Incorrect password. Please try again.");
+          } else if (error.code === "auth/invalid-email") {
+            setError("Invalid email format.");
+          } else {
+            setError("Login failed. Please try again.");
+          }
         }
-    };
+      };
 
     return(
         <main className="flex flex-col items-center justify-center min-h-screen">

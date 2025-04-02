@@ -11,13 +11,18 @@ import {
   arrayMove,
   horizontalListSortingStrategy,
   SortableContext,
-  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { useEffect, useRef, useState } from "react";
 import SortableTab from "./SortableTab";
 
+interface Tab {
+  id: string;
+  title: string;
+  pinned: boolean;
+}
+
 export default function TabsContainer() {
-  const [tabs, setTabs] = useState(() => {
+  const [tabs, setTabs] = useState<Tab[]>(() => {
     const saved = localStorage.getItem("tabs");
     return saved ? JSON.parse(saved) : [];
   });
@@ -38,20 +43,24 @@ export default function TabsContainer() {
   const visibleTabs = allTabs.filter((tab) => !overflowIds.includes(tab.id));
   const dropdownTabs = allTabs.filter((tab) => overflowIds.includes(tab.id));
 
+  // Save tabs to localStorage
   useEffect(() => {
     localStorage.setItem("tabs", JSON.stringify(tabs));
   }, [tabs]);
 
+  // Click outside popup closes it
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
         setSelectedTabId(null);
+        setPopupPosition(null);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Recalculate overflow tabs
   useEffect(() => {
     const checkOverflow = () => {
       if (!containerRef.current) return;
@@ -86,16 +95,17 @@ export default function TabsContainer() {
       )
     );
     setSelectedTabId(null);
+    setPopupPosition(null);
   };
 
   const removeTab = (id: string) => {
     setTabs((prev) => prev.filter((tab) => tab.id !== id));
     setSelectedTabId(null);
+    setPopupPosition(null);
   };
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
-
     if (active.id !== over?.id) {
       const oldIndex = unpinnedTabs.findIndex((tab) => tab.id === active.id);
       const newIndex = unpinnedTabs.findIndex((tab) => tab.id === over?.id);
@@ -104,11 +114,27 @@ export default function TabsContainer() {
     }
   };
 
+  const focusTab = (id: string) => {
+    setSelectedTabId(id);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-id="${id}"]`);
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const scrollX = window.scrollX;
+        const scrollY = window.scrollY;
+        setPopupPosition({
+          top: rect.bottom + scrollY + 6,
+          left: rect.left + scrollX,
+        });
+      }
+    }, 0);
+  };
+
   return (
     <div className="relative flex items-center gap-2 p-2 border-b overflow-x-auto">
       <div
         ref={containerRef}
-        className="tabs-scroll-container flex gap-2 overflow-x-auto"
+        className="w-full h-[72px] border border-[#AEB6CE33] flex items-center overflow-x-auto font-poppins"
       >
         <DndContext
           collisionDetection={closestCenter}
@@ -125,25 +151,8 @@ export default function TabsContainer() {
                 tab={tab}
                 selectedTabId={selectedTabId}
                 setSelectedTabId={(id) => {
-                  setSelectedTabId((prev) => {
-                    if (id && id !== prev) {
-                      setTimeout(() => {
-                        const el = document.querySelector(`[data-id="${id}"]`);
-                        if (el) {
-                          const rect = el.getBoundingClientRect();
-                          const container = document.querySelector(".tabs-scroll-container");
-                          const scrollLeft = container?.scrollLeft ?? 0;
-                          const scrollTop = container?.scrollTop ?? 0;
-
-                          setPopupPosition({
-                            top: rect.bottom + window.scrollY - scrollTop,
-                            left: rect.left + window.scrollX - scrollLeft,
-                          });
-                        }
-                      }, 0);
-                    }
-                    return id;
-                  });
+                  setSelectedTabId(id);
+                  if (id) focusTab(id);
                 }}
                 onRemove={removeTab}
               />
@@ -152,6 +161,7 @@ export default function TabsContainer() {
         </DndContext>
       </div>
 
+      {/* Add Tab */}
       <button
         className="ml-auto px-3 py-2 bg-blue-500 text-white rounded text-sm"
         onClick={() => {
@@ -161,22 +171,13 @@ export default function TabsContainer() {
             pinned: false,
           };
           setTabs((prev) => [...prev, newTab]);
-          setSelectedTabId(newTab.id);
-          setTimeout(() => {
-            const el = document.querySelector(`[data-id="${newTab.id}"]`);
-            if (el) {
-              const rect = el.getBoundingClientRect();
-              setPopupPosition({
-                top: rect.bottom + window.scrollY,
-                left: rect.left + window.scrollX,
-              });
-            }
-          }, 0);
+          focusTab(newTab.id);
         }}
       >
         +
       </button>
 
+      {/* Dropdown for hidden tabs */}
       {dropdownTabs.length > 0 && (
         <div className="relative ml-2">
           <button
@@ -191,11 +192,9 @@ export default function TabsContainer() {
                 <button
                   key={tab.id}
                   onClick={() => {
-                    document
-                      .querySelector(`[data-id="${tab.id}"]`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    setOverflowIds((prev) => prev.filter((id) => id !== tab.id));
+                    focusTab(tab.id);
                     setDropdownOpen(false);
-                    setSelectedTabId(tab.id);
                   }}
                   className="w-full text-left px-4 py-2 hover:bg-gray-100"
                 >
@@ -207,25 +206,26 @@ export default function TabsContainer() {
         </div>
       )}
 
-      {selectedTabId && popupPosition && (
-        <div
-          ref={popupRef}
-          className="fixed z-50 w-44 bg-white border rounded shadow-md text-sm"
-          style={{
-            top: popupPosition.top + 6,
-            left: popupPosition.left,
-          }}
-        >
-          <button
-            onClick={() => togglePin(selectedTabId)}
-            className="block w-full text-left px-3 py-2 hover:bg-gray-100"
-          >
-            {tabs.find((t) => t.id === selectedTabId)?.pinned
-              ? "Tab abpinnen"
-              : "Tab anpinnen"}
-          </button>
-        </div>
-      )}
+{selectedTabId && popupPosition && (
+  <div
+    ref={popupRef}
+    className="fixed z-50 w-[99px] h-[23px] bg-white rounded shadow-md text-sm"
+    style={{
+      top: popupPosition.top,
+      left: popupPosition.left,
+    }}
+  >
+    <button
+      onClick={() => togglePin(selectedTabId)}
+      className="w-full h-full text-[#7F858D] text-sm font-medium leading-[23px] tracking-normal font-poppins text-left px-2"
+    >
+      {tabs.find((t) => t.id === selectedTabId)?.pinned
+        ? "Tab abpinnen"
+        : "Tab anpinnen"}
+    </button>
+  </div>
+)}
+
     </div>
   );
 }
